@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -12,10 +14,12 @@ class UserController extends Controller
     $validate = $request->validate([
       'name' => 'required',
       'email' => 'required',
-      'password' => 'required',
-      'password_confirmation' => 'required|same:password',
+      'password' => ['required', 'confirmed'],
     ]);
+
+    $validate['password'] = Hash::make($request->password);
     $user = User::create($validate);
+
     return response()->json([
       'created' => true,
       'user' => $user
@@ -24,19 +28,21 @@ class UserController extends Controller
 
   function login(Request $request)
   {
-    $validate = $request->validate([
-      'email' => 'required',
-      'password' => 'required'
+    $request->validate([
+      'email' => ['required', 'email'],
+      'password' => ['required']
     ]);
 
-    if(!auth()->attempt($validate)) {
-      return response()->json([
-        'status' => false,
-        'message' => 'Invalid credentials.'
-      ], 400);
+    $user = User::where('email', $request->email)->first();
+
+    if(!$user || !Hash::check($request->password, $user->password)) {
+      throw ValidationException::withMessages([
+        'email' => ['The provided credentials are incorrect.']
+      ]);
     }
 
-    $token = auth()->user()->createToken('auth_token')->accessToken;
+    $token = $user->createToken('auth_token')->accessToken;
+
     return response()->json([
       'status' => true,
       'message' => 'User logged in successfully.',
@@ -51,7 +57,7 @@ class UserController extends Controller
 
   function logout(Request $request)
   {
-    $request->user()->token()->revoke();
+    $request->user()->tokens()->delete();
     return response()->json([
       'revoke' => true,
       'message' => 'User logged out successfully.'
